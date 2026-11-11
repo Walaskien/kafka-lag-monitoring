@@ -1,0 +1,127 @@
+
+== 0. stack is ready ==
+count(up{job=~"kafka-.*"} == 1) == 2.0: yes
+kafka_consumergroup_members{consumergroup="orders-processor"} == 1.0: yes
+sum(kafka:consumergroup_lag:sum) < 50.0: yes
+sum(kafka:consumergroup_consume_rate:rate1m) > 15.0: yes
+13:35:15 lag=12 members=1 consume=15.1/s produce=15.1/s firing=-
+GROUP            TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                  HOST            CLIENT-ID
+orders-processor orders          0          487             495             8               rdkafka-404aed46-58e6-4e2c-ba2c-867886a85131 /172.19.0.6     rdkafka
+orders-processor orders          1          178             180             2               rdkafka-404aed46-58e6-4e2c-ba2c-867886a85131 /172.19.0.6     rdkafka
+orders-processor orders          2          398             405             7               rdkafka-404aed46-58e6-4e2c-ba2c-867886a85131 /172.19.0.6     rdkafka
+KafkaConsumerGroupNoMembers inactive: yes
+KafkaConsumerStuck inactive: yes
+KafkaConsumerLagGrowing inactive: yes
+
+== 1a. consumer process is killed ==
+Killing kafkalag_consumer_1 ... 
+Killing kafkalag_consumer_1 ... done
+13:35:17 killed; the group still counts it as a member until session.timeout.ms (10 s)
+13:35:22 lag=12 members=1 consume=16.8/s produce=16.8/s firing=-
+13:35:27 lag=72 members=1 consume=17.4/s produce=18.4/s firing=-
+13:35:32 lag=171 members=0 consume=17.1/s produce=20.0/s firing=-
+13:35:37 lag=371 members=0 consume=13.5/s produce=20.0/s firing=-
+13:35:43 lag=471 members=0 consume=11.7/s produce=20.0/s firing=-
+13:35:48 lag=571 members=0 consume=9.9/s produce=20.0/s firing=-
+KafkaConsumerGroupNoMembers firing: yes
+13:36:03 KafkaConsumerGroupNoMembers firing 46 s after the kill
+KafkaConsumerGroupNoMembers in Alertmanager: yes
+13:36:03 Alertmanager holds: KafkaConsumerGroupNoMembers
+KafkaConsumerStuck inactive: yes
+KafkaConsumerLagGrowing inactive: yes
+sum(kafka:consumergroup_lag:sum) > 500.0: yes
+13:36:03 lag=871 members=0 consume=4.4/s produce=20.0/s firing=KafkaConsumerGroupNoMembers
+Consumer group 'orders-processor' has no active members.
+GROUP            TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID     HOST            CLIENT-ID
+orders-processor orders          0          497             938             441             -               -               -
+orders-processor orders          1          181             342             161             -               -               -
+orders-processor orders          2          405             768             363             -               -               -
+13:36:05 offset reset, dry run: to latest (skips the whole backlog)
+orders,0,951
+orders,1,347
+orders,2,779
+13:36:06 offset reset, dry run: back 100 messages on every partition (replay)
+orders,0,397
+orders,1,81
+orders,2,305
+
+== 1b. consumer is started again ==
+Starting consumer ... 
+Starting consumer ... done
+13:36:13 lag=11 members=1 consume=20.0/s produce=20.0/s firing=-
+13:36:18 lag=10 members=1 consume=21.1/s produce=20.0/s firing=-
+13:36:23 lag=9 members=1 consume=22.9/s produce=20.0/s firing=-
+sum(kafka:consumergroup_lag:sum) < 50.0: yes
+KafkaConsumerGroupNoMembers inactive: yes
+13:36:24 recovered 16 s after the start
+13:36:24 lag=9 members=1 consume=22.9/s produce=20.0/s firing=-
+GROUP            TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                  HOST            CLIENT-ID
+orders-processor orders          0          1120            1126            6               rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          1          408             411             3               rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          2          917             921             4               rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+
+== 2. slow consumer: 100 ms per message is 10 msg/s against 20 msg/s produced ==
+{"rate": 20.0, "process_ms": 100, "paused": false}
+13:36:35 lag=49 members=1 consume=25.9/s produce=20.0/s firing=-
+13:36:46 lag=150 members=1 consume=27.7/s produce=20.0/s firing=-
+13:36:56 lag=252 members=1 consume=29.4/s produce=20.0/s firing=-
+13:37:06 lag=354 members=1 consume=31.2/s produce=20.0/s firing=-
+13:37:16 lag=455 members=1 consume=11.9/s produce=20.0/s firing=-
+13:37:26 lag=557 members=1 consume=10.0/s produce=20.0/s firing=-
+KafkaConsumerLagGrowing firing: yes
+13:38:44 KafkaConsumerLagGrowing firing 139 s after the slowdown
+KafkaConsumerGroupNoMembers inactive: yes
+KafkaConsumerStuck inactive: yes
+13:38:45 lag=1371 members=1 consume=9.8/s produce=20.0/s firing=KafkaConsumerLagGrowing
+GROUP            TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                  HOST            CLIENT-ID
+orders-processor orders          0          1761            2418            657             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          1          641             880             239             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          2          1440            1979            539             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+{"rate": 20.0, "process_ms": 0, "paused": false}
+sum(kafka:consumergroup_lag:sum) < 50.0: yes
+KafkaConsumerLagGrowing inactive: yes
+13:38:59 lag=4 members=1 consume=37.5/s produce=20.0/s firing=-
+
+== 3. stuck consumer: still in the group, takes nothing ==
+{"rate": 20.0, "process_ms": 0, "paused": true}
+13:39:09 lag=120 members=1 consume=37.2/s produce=20.0/s firing=-
+13:39:19 lag=320 members=1 consume=35.4/s produce=20.0/s firing=-
+13:39:29 lag=520 members=1 consume=33.6/s produce=20.0/s firing=-
+13:39:39 lag=720 members=1 consume=31.8/s produce=20.0/s firing=-
+13:39:49 lag=920 members=1 consume=3.4/s produce=20.0/s firing=-
+13:39:59 lag=1120 members=1 consume=0.0/s produce=20.0/s firing=-
+KafkaConsumerStuck firing: yes
+13:40:33 KafkaConsumerStuck firing 94 s after the pause
+KafkaConsumerGroupNoMembers inactive: yes
+KafkaConsumerLagGrowing inactive: yes
+13:40:33 lag=1820 members=1 consume=0.0/s produce=20.0/s firing=KafkaConsumerStuck
+GROUP            TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                  HOST            CLIENT-ID
+orders-processor orders          0          2536            3411            875             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          1          923             1240            317             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+orders-processor orders          2          2075            2790            715             rdkafka-4c525705-c344-48e0-94f3-caafdf8d8fe1 /172.19.0.6     rdkafka
+{"rate": 20.0, "process_ms": 0, "paused": false}
+sum(kafka:consumergroup_lag:sum) < 50.0: yes
+KafkaConsumerStuck inactive: yes
+13:40:50 lag=19 members=1 consume=38.2/s produce=20.0/s firing=-
+
+== 4. broker is stopped ==
+Stopping kafkalag_kafka_1 ... 
+Stopping kafkalag_kafka_1 ... done
+13:41:01 lag=19 members=n/a consume=40.1/s produce=18.2/s firing=-
+13:41:11 lag=n/a members=n/a consume=41.0/s produce=14.9/s firing=-
+13:41:21 lag=n/a members=n/a consume=42.5/s produce=11.6/s firing=-
+KafkaBrokerMetricsMissing firing: yes
+13:41:25 KafkaBrokerMetricsMissing firing 35 s after the stop
+KafkaExporterDown firing: yes
+KafkaBrokerMetricsMissing in Alertmanager: yes
+13:41:34 Alertmanager holds: KafkaBrokerMetricsMissing KafkaExporterDown
+Starting kafka ... 
+Starting kafka ... done
+KafkaBrokerMetricsMissing inactive: yes
+KafkaExporterDown inactive: yes
+kafka_consumergroup_members{consumergroup="orders-processor"} == 1.0: yes
+sum(kafka:consumergroup_lag:sum) < 100.0: yes
+13:41:41 lag=9 members=1 consume=4.0/s produce=3.8/s firing=-
+
+== done ==
+exit=0
