@@ -1,0 +1,40 @@
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+rules:
+  - pattern: 'kafka.server<type=ReplicaManager, name=UnderReplicatedPartitions><>Value'
+    name: kafka_under_replicated_partitions
+    type: GAUGE
+  - pattern: 'kafka.server<type=ReplicaManager, name=UnderMinIsrPartitionCount><>Value'
+    name: kafka_under_min_isr_partitions
+    type: GAUGE
+  - pattern: 'kafka.server<type=ReplicaManager, name=PartitionCount><>Value'
+    name: kafka_partitions
+    type: GAUGE
+  - pattern: 'kafka.controller<type=KafkaController, name=OfflinePartitionsCount><>Value'
+    name: kafka_offline_partitions
+    type: GAUGE
+  - pattern: 'kafka.controller<type=KafkaController, name=ActiveControllerCount><>Value'
+    name: kafka_active_controllers
+    type: GAUGE
+  - pattern: 'kafka.server<type=BrokerTopicMetrics, name=MessagesInPerSec, topic=([^_].*)><>Count'
+    name: kafka_topic_messages_in_total
+    type: COUNTER
+    labels:
+      topic: $1
+  - pattern: 'kafka.server<type=BrokerTopicMetrics, name=BytesInPerSec, topic=([^_].*)><>Count'
+    name: kafka_topic_bytes_in_total
+    type: COUNTER
+    labels:
+      topic: $1
+  - pattern: 'kafka.server<type=BrokerTopicMetrics, name=BytesOutPerSec, topic=([^_].*)><>Count'
+    name: kafka_topic_bytes_out_total
+    type: COUNTER
+    labels:
+      topic: $1
+  # on-disk size of each partition log; internal topics (__consumer_offsets) are skipped
+  - pattern: 'kafka.log<type=Log, name=Size, topic=([^_].*), partition=(.*)><>Value'
+    name: kafka_log_size_bytes
+    type: GAUGE
+    labels:
+      topic: $1
+      partition: $2

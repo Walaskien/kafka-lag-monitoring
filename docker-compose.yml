@@ -1,0 +1,102 @@
+# Ports are non-default on purpose and bound to localhost: Grafana 13000, Prometheus 19090,
+# Alertmanager 19093, kafka-exporter 19308, producer control 19101, consumer control 19102.
+services:
+  kafka:
+    build: ./kafka
+    image: kafka-lag-monitoring-broker:local
+    # the java agent is set only for the server process, so kafka-*.sh run with
+    # docker exec do not try to open the same metrics port
+    command:
+      - sh
+      - -c
+      - KAFKA_OPTS='-javaagent:/opt/jmx/jmx_prometheus_javaagent.jar=7071:/opt/jmx/jmx-exporter.yml' exec /etc/kafka/docker/run
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    ports: ["127.0.0.1:19071:7071"]
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9092"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka: {condition: service_healthy}
+    restart: "no"
+    command:
+      - /opt/kafka/bin/kafka-topics.sh
+      - --bootstrap-server=kafka:9092
+      - --create
+      - --if-not-exists
+      - --topic=orders
+      - --partitions=3
+      - --replication-factor=1
+      - --config=retention.ms=3600000
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    command:
+      - --kafka.server=kafka:9092
+      - --refresh.metadata=10s
+    ports: ["127.0.0.1:19308:9308"]
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  producer:
+    build: ./app
+    image: kafka-lag-monitoring-app:local
+    command: ["python", "-u", "producer.py"]
+    environment:
+      RATE: "20"
+    ports: ["127.0.0.1:19101:8000"]
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  consumer:
+    build: ./app
+    image: kafka-lag-monitoring-app:local
+    command: ["python", "-u", "consumer.py"]
+    ports: ["127.0.0.1:19102:8000"]
+    depends_on:
+      kafka: {condition: service_healthy}
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports: ["127.0.0.1:19090:9090"]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    depends_on: [kafka-exporter, alertmanager]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports: ["127.0.0.1:19093:9093"]
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports: ["127.0.0.1:13000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin   # demo stack only: change before exposing
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
