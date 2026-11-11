@@ -8,8 +8,8 @@ jobs:
       matrix:
         python: ["3.9", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -r requirements-dev.txt
@@ -19,7 +19,7 @@ jobs:
   static:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: promtool check and unit tests
         run: |
           docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.55.1 check config /p/prometheus.yml
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: start the stack
         run: docker compose up -d --build
       - name: incident scenario (consumer dead, slow, stuck, broker down)
@@ -49,7 +49,7 @@ jobs:
         run: |
           docker compose ps
           docker compose logs --tail=40 kafka kafka-exporter consumer producer prometheus
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: scenario-log
