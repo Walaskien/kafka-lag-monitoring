@@ -27,7 +27,7 @@ check:
 	docker run --rm -v $(CURDIR):/mnt -w /mnt rhysd/actionlint:1.7.7
 	$(COMPOSE) config -q
 
-# the full incident walk-through against a running stack, about 12 minutes
+# the full incident walk-through against a running stack, about 8 minutes
 scenario:
 	scripts/scenario.sh
 

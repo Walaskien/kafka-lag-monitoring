@@ -70,7 +70,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Brokers seen by exporter",
+      "title": "Brokers",
       "description": "0 or no data: the exporter cannot reach the broker.",
       "datasource": {
         "type": "prometheus",
@@ -266,7 +266,7 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Under-replicated partitions",
+      "title": "Under-replicated",
       "description": "Always 0 on a single broker. JMX metric.",
       "datasource": {
         "type": "prometheus",
@@ -330,7 +330,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Offline partitions",
+      "title": "Offline",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -394,7 +394,7 @@
     {
       "id": 6,
       "type": "stat",
-      "title": "Kafka alerts firing",
+      "title": "Alerts firing",
       "description": "",
       "datasource": {
         "type": "prometheus",
@@ -447,7 +447,7 @@
             "type": "prometheus",
             "uid": "prom"
           },
-          "expr": "count(ALERTS{alertstate=\"firing\",alertname=~\"Kafka.*\"})",
+          "expr": "count(ALERTS{alertstate=\"firing\",alertname=~\"Kafka.*\"}) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",

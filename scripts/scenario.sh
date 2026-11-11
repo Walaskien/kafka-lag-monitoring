@@ -22,10 +22,11 @@ describe() {
     --bootstrap-server localhost:9092 --describe --group "$group" 2>&1 | grep -v '^$' || true
 }
 
-# dry run only, nothing is changed
+# Dry run only, nothing is changed. --export prints topic,partition,new-offset lines,
+# the default table of Kafka 3.9 puts all rows on one line.
 reset_dry_run() {
   "${compose[@]}" exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh \
-    --bootstrap-server localhost:9092 --group "$group" --topic orders --reset-offsets "$@" --dry-run 2>&1 | grep -v '^$' || true
+    --bootstrap-server localhost:9092 --group "$group" --topic orders --reset-offsets "$@" --dry-run --export 2>&1 | grep -v '^$' || true
 }
 
 # print the group state every $2 seconds, $1 times
