@@ -1,0 +1,59 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: pytest -q
+
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: promtool check and unit tests
+        run: |
+          docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.55.1 check config /p/prometheus.yml
+          docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.55.1 check rules /p/rules/recording.yml /p/rules/alerts.yml
+          docker run --rm -v "$PWD/prometheus:/p:ro" --entrypoint promtool prom/prometheus:v2.55.1 test rules /p/tests.yml
+      - name: amtool check-config
+        run: docker run --rm -v "$PWD/alertmanager:/a:ro" --entrypoint amtool prom/alertmanager:v0.27.0 check-config /a/alertmanager.yml
+      - name: shellcheck
+        run: docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck-alpine:stable shellcheck scripts/*.sh
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/mnt" -w /mnt rhysd/actionlint:1.7.7
+      - name: compose file is valid
+        run: docker compose config -q
+
+  scenario:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: start the stack
+        run: docker compose up -d --build
+      - name: incident scenario (consumer dead, slow, stuck, broker down)
+        shell: bash
+        run: scripts/scenario.sh 2>&1 | tee scenario.log
+      - name: container state and logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --tail=40 kafka kafka-exporter consumer producer prometheus
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scenario-log
+          path: scenario.log
+      - name: stop the stack
+        if: always()
+        run: docker compose down -v
