@@ -8,7 +8,7 @@ route:
 # A dead broker makes every consumer alert meaningless, and an empty group makes
 # "stuck" and "slow" meaningless for that group. Keep only the root cause.
 inhibit_rules:
-  - source_matchers: [alertname =~ "KafkaBrokerMetricsMissing|KafkaExporterDown|KafkaNoBrokers"]
+  - source_matchers: [alertname =~ "KafkaBrokerMetricsMissing|KafkaExporterDown"]
     target_matchers: [alertname =~ "KafkaConsumer.*"]
   - source_matchers: [alertname = "KafkaConsumerGroupNoMembers"]
     target_matchers: [alertname =~ "KafkaConsumerStuck|KafkaConsumerLagGrowing"]

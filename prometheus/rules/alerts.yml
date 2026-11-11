@@ -1,0 +1,89 @@
+# The three consumer alerts are mutually exclusive on purpose, each one means a different action:
+#   no members            -> the process is gone, restart it
+#   members, no commits   -> the process is alive but not working, look inside it
+#   members, commits, lag grows -> it works but too slowly, scale or find the slow dependency
+# "for" durations are short so the demo reacts in about a minute; raise them for real topics.
+groups:
+  - name: kafka-consumers
+    rules:
+      - alert: KafkaConsumerGroupNoMembers
+        expr: |
+          (kafka_consumergroup_members == 0)
+          and on (consumergroup)
+          (sum by (consumergroup) (kafka:consumergroup_lag:sum) > 0)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Consumer group {{ $labels.consumergroup }} has no members and is behind"
+          description: "Nobody is consuming for group {{ $labels.consumergroup }}. Lag keeps growing while producers write."
+          runbook: docs/runbook.md#kafkaconsumergroupnomembers
+
+      - alert: KafkaConsumerStuck
+        expr: |
+          (kafka:consumergroup_lag:sum > 0)
+          and on (consumergroup, topic) (kafka:consumergroup_consume_rate:rate1m == 0)
+          and on (consumergroup) (kafka_consumergroup_members > 0)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Group {{ $labels.consumergroup }} has members but commits nothing on {{ $labels.topic }}"
+          description: "Lag is {{ $value }} and the committed offsets have not moved for over a minute while the group is still joined."
+          runbook: docs/runbook.md#kafkaconsumerstuck
+
+      - alert: KafkaConsumerLagGrowing
+        expr: |
+          (kafka:consumergroup_lag:sum > 100)
+          and on (consumergroup, topic) (deriv(kafka:consumergroup_lag:sum[2m]) > 0)
+          and on (consumergroup, topic) (kafka:consumergroup_consume_rate:rate1m > 0)
+          and on (consumergroup) (kafka_consumergroup_members > 0)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Group {{ $labels.consumergroup }} is alive but falling behind on {{ $labels.topic }}"
+          description: "Lag is {{ $value }} and growing while the consumers still commit offsets, so they are slower than the producers."
+          runbook: docs/runbook.md#kafkaconsumerlaggrowing
+
+  - name: kafka-broker
+    rules:
+      - alert: KafkaBrokerMetricsMissing
+        expr: (up{job="kafka-jmx"} == 0) or absent(up{job="kafka-jmx"})
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "No JMX metrics from the Kafka broker"
+          description: "The broker is down, hung or its metrics port is unreachable. Consumer alerts are inhibited while this fires."
+          runbook: docs/runbook.md#kafkabrokermetricsmissing
+
+      - alert: KafkaExporterDown
+        expr: (up{job="kafka-exporter"} == 0) or absent(up{job="kafka-exporter"})
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "kafka-exporter is not scraped"
+          description: "No lag data. The exporter cannot reach the broker or is not running; with the broker down it fails its scrapes."
+          runbook: docs/runbook.md#kafkaexporterdown
+
+      - alert: KafkaUnderReplicatedPartitions
+        expr: max(kafka_under_replicated_partitions) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} under-replicated partitions"
+          description: "Some followers are behind or gone. With one broker this stays 0, it is here for multi-broker clusters."
+          runbook: docs/runbook.md#kafkaunderreplicatedpartitions
+
+      - alert: KafkaOfflinePartitions
+        expr: max(kafka_offline_partitions) > 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} partitions have no leader"
+          description: "Producers and consumers of those partitions are blocked."
+          runbook: docs/runbook.md#kafkaofflinepartitions

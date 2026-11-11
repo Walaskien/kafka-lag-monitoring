@@ -1,0 +1,234 @@
+rule_files:
+  - rules/recording.yml
+  - rules/alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  # normal day: producer and consumer both at 20 msg/s, tiny lag
+  - name: healthy
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '3+0x40'
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="1"}'
+        values: '5+0x40'
+      - series: 'kafka_consumergroup_current_offset{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '0+150x40'
+      - series: 'kafka_consumergroup_members{consumergroup="orders-processor"}'
+        values: '1+0x40'
+      - series: 'up{job="kafka-jmx"}'
+        values: '1+0x40'
+      - series: 'up{job="kafka-exporter"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: KafkaConsumerStuck
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: KafkaConsumerLagGrowing
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: KafkaBrokerMetricsMissing
+        exp_alerts: []
+    promql_expr_test:
+      - expr: kafka:consumergroup_lag:sum
+        eval_time: 5m
+        exp_samples:
+          - labels: 'kafka:consumergroup_lag:sum{consumergroup="orders-processor",topic="orders"}'
+            value: 8
+
+  # consumer process is gone: members drop to 0, committed offsets freeze, lag grows 20/s
+  - name: consumer_dead
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '2+0x8 2+300x32'
+      - series: 'kafka_consumergroup_current_offset{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '0+300x8 2400+0x32'
+      - series: 'kafka_consumergroup_members{consumergroup="orders-processor"}'
+        values: '1+0x8 0+0x32'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              consumergroup: orders-processor
+            exp_annotations:
+              summary: "Consumer group orders-processor has no members and is behind"
+              description: "Nobody is consuming for group orders-processor. Lag keeps growing while producers write."
+              runbook: docs/runbook.md#kafkaconsumergroupnomembers
+      # a dead group must not also page as stuck or slow
+      - eval_time: 5m
+        alertname: KafkaConsumerStuck
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaConsumerLagGrowing
+        exp_alerts: []
+
+  # process is in the group (heartbeats) but commits nothing: hung on a dependency or a poison message
+  - name: consumer_stuck
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '2+0x8 2+300x32'
+      - series: 'kafka_consumergroup_current_offset{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '0+300x8 2400+0x32'
+      - series: 'kafka_consumergroup_members{consumergroup="orders-processor"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KafkaConsumerStuck
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              consumergroup: orders-processor
+              topic: orders
+            exp_annotations:
+              summary: "Group orders-processor has members but commits nothing on orders"
+              description: "Lag is 3302 and the committed offsets have not moved for over a minute while the group is still joined."
+              runbook: docs/runbook.md#kafkaconsumerstuck
+      - eval_time: 5m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaConsumerLagGrowing
+        exp_alerts: []
+
+  # consumer commits 10 msg/s (150 per 15s) but the producer writes 20 msg/s: lag grows 10/s
+  - name: consumer_slow
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '2+150x40'
+      - series: 'kafka_consumergroup_current_offset{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '0+150x40'
+      - series: 'kafka_consumergroup_members{consumergroup="orders-processor"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KafkaConsumerLagGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              consumergroup: orders-processor
+              topic: orders
+            exp_annotations:
+              summary: "Group orders-processor is alive but falling behind on orders"
+              description: "Lag is 3002 and growing while the consumers still commit offsets, so they are slower than the producers."
+              runbook: docs/runbook.md#kafkaconsumerlaggrowing
+      - eval_time: 5m
+        alertname: KafkaConsumerStuck
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts: []
+
+  # consumer restarted after an outage: lag drains, the alert resolves
+  - name: recovery
+    interval: 15s
+    input_series:
+      - series: 'kafka_consumergroup_lag{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '2+300x16 4802-600x8 0+0x20'
+      - series: 'kafka_consumergroup_current_offset{consumergroup="orders-processor",topic="orders",partition="0"}'
+        values: '0+300x16 4800+0x1 4800+620x7 9760+20x20'
+      - series: 'kafka_consumergroup_members{consumergroup="orders-processor"}'
+        values: '1+0x2 0+0x14 1+0x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              consumergroup: orders-processor
+            exp_annotations:
+              summary: "Consumer group orders-processor has no members and is behind"
+              description: "Nobody is consuming for group orders-processor. Lag keeps growing while producers write."
+              runbook: docs/runbook.md#kafkaconsumergroupnomembers
+      - eval_time: 9m
+        alertname: KafkaConsumerGroupNoMembers
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: KafkaConsumerLagGrowing
+        exp_alerts: []
+
+  # broker down: JMX target fails its scrape. A second case: the target vanished from the config.
+  - name: broker_metrics_missing
+    interval: 15s
+    input_series:
+      - series: 'up{job="kafka-jmx"}'
+        values: '1+0x8 0+0x20'
+      - series: 'up{job="kafka-exporter"}'
+        values: '1+0x8 0+0x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KafkaBrokerMetricsMissing
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: KafkaBrokerMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kafka-jmx
+            exp_annotations:
+              summary: "No JMX metrics from the Kafka broker"
+              description: "The broker is down, hung or its metrics port is unreachable. Consumer alerts are inhibited while this fires."
+              runbook: docs/runbook.md#kafkabrokermetricsmissing
+      - eval_time: 4m
+        alertname: KafkaExporterDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kafka-exporter
+            exp_annotations:
+              summary: "kafka-exporter is not scraped"
+              description: "No lag data. The exporter cannot reach the broker or is not running; with the broker down it fails its scrapes."
+              runbook: docs/runbook.md#kafkaexporterdown
+
+  - name: broker_series_absent
+    interval: 15s
+    input_series:
+      - series: 'up{job="something-else"}'
+        values: '1+0x40'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: KafkaBrokerMetricsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kafka-jmx
+            exp_annotations:
+              summary: "No JMX metrics from the Kafka broker"
+              description: "The broker is down, hung or its metrics port is unreachable. Consumer alerts are inhibited while this fires."
+              runbook: docs/runbook.md#kafkabrokermetricsmissing
+
+  - name: under_replicated
+    interval: 15s
+    input_series:
+      - series: 'kafka_under_replicated_partitions'
+        values: '0+0x4 2+0x30'
+      - series: 'kafka_offline_partitions'
+        values: '0+0x34'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KafkaUnderReplicatedPartitions
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaUnderReplicatedPartitions
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "2 under-replicated partitions"
+              description: "Some followers are behind or gone. With one broker this stays 0, it is here for multi-broker clusters."
+              runbook: docs/runbook.md#kafkaunderreplicatedpartitions
+      - eval_time: 5m
+        alertname: KafkaOfflinePartitions
+        exp_alerts: []

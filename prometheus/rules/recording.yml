@@ -1,0 +1,14 @@
+groups:
+  - name: kafka-recording
+    rules:
+      # kafka_consumergroup_lag_sum from the exporter is sometimes missing in a scrape,
+      # so the per-partition series are summed here instead
+      - record: kafka:consumergroup_lag:sum
+        expr: sum by (consumergroup, topic) (kafka_consumergroup_lag{topic!~"__.*"})
+
+      # committed offsets only grow, so rate() works on them (a manual offset reset shows up as a one-off spike)
+      - record: kafka:consumergroup_consume_rate:rate1m
+        expr: sum by (consumergroup, topic) (rate(kafka_consumergroup_current_offset{topic!~"__.*"}[1m]))
+
+      - record: kafka:topic_produce_rate:rate1m
+        expr: sum by (topic) (rate(kafka_topic_partition_current_offset{topic!~"__.*"}[1m]))
