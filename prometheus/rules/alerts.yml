@@ -2,6 +2,9 @@
 #   no members            -> the process is gone, restart it
 #   members, no commits   -> the process is alive but not working, look inside it
 #   members, commits, lag grows -> it works but too slowly, scale or find the slow dependency
+# The lag shown in the descriptions is summed from the raw series here, not read from the
+# kafka:consumergroup_lag:sum recording rule: rules from different groups run in no fixed order,
+# so an alert can see the recorded value of the previous evaluation (that made a promtool test flaky on CI).
 # "for" durations are short so the demo reacts in about a minute; raise them for real topics.
 groups:
   - name: kafka-consumers
@@ -21,7 +24,7 @@ groups:
 
       - alert: KafkaConsumerStuck
         expr: |
-          (kafka:consumergroup_lag:sum > 0)
+          (sum by (consumergroup, topic) (kafka_consumergroup_lag{topic!~"__.*"}) > 0)
           and on (consumergroup, topic) (kafka:consumergroup_consume_rate:rate1m == 0)
           and on (consumergroup) (kafka_consumergroup_members > 0)
         for: 30s
@@ -34,7 +37,7 @@ groups:
 
       - alert: KafkaConsumerLagGrowing
         expr: |
-          (kafka:consumergroup_lag:sum > 100)
+          (sum by (consumergroup, topic) (kafka_consumergroup_lag{topic!~"__.*"}) > 100)
           and on (consumergroup, topic) (deriv(kafka:consumergroup_lag:sum[2m]) > 0)
           and on (consumergroup, topic) (kafka:consumergroup_consume_rate:rate1m > 0)
           and on (consumergroup) (kafka_consumergroup_members > 0)
