@@ -1,5 +1,7 @@
 # kafka-lag-monitoring
 
+[![ci](https://github.com/Walaskien/kafka-lag-monitoring/actions/workflows/ci.yml/badge.svg)](https://github.com/Walaskien/kafka-lag-monitoring/actions/workflows/ci.yml)
+
 Monitoring for a Kafka consumer group that falls behind, with alerts that tell a dead consumer from a stuck one and from a slow one.
 
 Consumer lag by itself is a weak signal: it grows when the consumer process is gone, when it is alive but hung on a dependency, and when it simply cannot keep up with the producers. The three have different fixes (restart, look inside the process, scale or find the slow call), so the alerts here are built to say which case it is. The same idea as in [queue-saturation-observability](https://github.com/Walaskien/queue-saturation-observability), applied to Kafka.
@@ -94,7 +96,21 @@ Local runs on macOS (Colima, Docker 29), Python 3.9.6, docker-compose 1.29.2 fro
 | Grafana provisioning | dashboard "Kafka consumer lag" found through `/api/search`, screenshot taken from the running stack with headless Chrome |
 | Runbook commands against the demo broker | `--list`, `--describe`, `--describe --state`, `--describe --members --verbose`, `kafka-topics.sh --describe`, `--under-replicated-partitions`, `--unavailable-partitions`, `--alter --partitions` (on a scratch topic), `kafka-log-dirs.sh`, `--reset-offsets` dry runs (error on an active group, offsets printed on an empty one) |
 
-Not verified: the GitHub Actions workflow has not run yet, so nothing here is marked as checked in CI. Also not run: `pytest` on Python 3.12 (it is in the CI matrix), `--reset-offsets --execute`, scaling the consumer to several instances, more than one broker (so the under-replicated and offline alerts are covered by `promtool` tests only), and any real workload.
+### Checked in CI
+
+GitHub Actions on `ubuntu-latest` (Docker Compose v2), [run 43048120118](https://github.com/Walaskien/kafka-lag-monitoring/actions/runs/43048120118), all four jobs green:
+
+| Job | Result |
+|---|---|
+| `python` (3.9 and 3.12) | `ruff` and `pytest` pass on both |
+| `static` | `promtool` check and test, `amtool`, `shellcheck`, `actionlint`, `docker compose config` pass |
+| `scenario` | `docker compose up -d --build`, then the whole `scripts/scenario.sh`, passes; the job took 8 minutes including the image build |
+
+Alert timings on the runner, as measured (local run in brackets): consumer killed, `KafkaConsumerGroupNoMembers` after 43 s (46 s); lag back under 50 within 16 s of the restart (16 s); slow consumer, `KafkaConsumerLagGrowing` after 141 s (139 s); paused consumer, `KafkaConsumerStuck` after 99 s (94 s); broker stopped, `KafkaBrokerMetricsMissing` after 41 s (35 s). The runner log is uploaded as the `scenario-log` artifact of the run.
+
+The first CI run found a flaky `promtool` test: a test compared the lag number in an alert description, and rules from different groups have no fixed evaluation order, so the alert sometimes read the recording rule's value from the previous evaluation. The scenario job passed in that run too. The alerts now sum the raw lag series (commit "alerts: sum raw lag so the value does not depend on rule group order"), and `promtool test rules` passed 8 times in a row locally after the change. The local scenario run and `docs/scenario-output.txt` above were recorded before that rule change.
+
+Not run: `--reset-offsets --execute`, scaling the consumer to several instances, more than one broker (so the under-replicated and offline alerts are covered by `promtool` tests only), and any real workload.
 
 ## Limits
 
