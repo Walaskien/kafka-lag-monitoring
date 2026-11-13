@@ -134,3 +134,36 @@ def test_settings_defaults_and_overrides():
     assert cfg["rate"] == 20.0
     cfg = common.settings({"RATE": "5.5", "PROCESS_MS": "40", "KAFKA_TOPIC": "t"})
     assert (cfg["rate"], cfg["process_ms"], cfg["topic"]) == (5.5, 40, "t")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        None,
+        b"",
+        b"\xff",
+        b"[]",
+        b'{"seq":1}',
+        b'{"seq":1,"ts":null}',
+        b'{"seq":1,"ts":"x"}',
+        b'{"seq":1,"ts":true}',
+        b'{"seq":"1","ts":1.5}',
+    ],
+)
+def test_parse_message_rejects_bad_input(raw):
+    # a tombstone has value None; only ValueError may come out, the consumer skips on that
+    with pytest.raises(ValueError):
+        common.parse_message(raw)
+
+
+def test_parse_message_keeps_a_good_one():
+    assert common.parse_message(b'{"seq":3,"ts":10}') == {"seq": 3, "ts": 10}
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"process_ms": -5}, {"rate": -1}, {"rate": common.MAX_RATE + 1}],
+)
+def test_state_rejects_bad_initial_values(kwargs):
+    with pytest.raises(ValueError):
+        common.ControlState(**kwargs)

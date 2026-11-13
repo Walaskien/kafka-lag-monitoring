@@ -20,9 +20,11 @@ class ControlState:
 
     def __init__(self, rate: float = 20.0, process_ms: int = 0, paused: bool = False) -> None:
         self._lock = threading.Lock()
-        self._rate = rate
-        self._process_ms = process_ms
+        self._rate = 0.0
+        self._process_ms = 0
         self._paused = paused
+        self.set_rate(rate)
+        self.set_process_ms(process_ms)
 
     def snapshot(self) -> Dict[str, object]:
         with self._lock:
@@ -145,9 +147,15 @@ def make_message(seq: int, now: Optional[float] = None, keys: int = 24) -> Tuple
 
 
 def parse_message(raw: bytes) -> Dict[str, float]:
+    if not raw:
+        raise ValueError("empty message value")
     data = json.loads(raw.decode())
     if not isinstance(data, dict) or "seq" not in data or "ts" not in data:
         raise ValueError("not a demo message")
+    for field in ("seq", "ts"):
+        value = data[field]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("%s is not a number" % field)
     return data
 
 

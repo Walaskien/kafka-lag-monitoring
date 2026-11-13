@@ -85,7 +85,7 @@ Local runs on macOS (Colima, Docker 29), Python 3.9.6, docker-compose 1.29.2 fro
 
 | Check | Result |
 |---|---|
-| `pytest -q` (control API, pacer, message format, `promq` helper against a stub HTTP server) | 34 passed |
+| `pytest -q` (control API, pacer, message format incl. bad and empty message values, `promq` helper against a stub HTTP server) | 47 passed, also on python:3.12-slim |
 | `ruff check .` (0.17.4) | all checks passed |
 | `promtool check config` and `check rules` (prom/prometheus v2.55.1) | success, 3 recording and 7 alerting rules |
 | `promtool test rules prometheus/tests.yml` | success, 8 test groups: healthy, consumer dead, stuck, slow, recovery (alert resolves), broker target down, broker series absent, under-replicated |
